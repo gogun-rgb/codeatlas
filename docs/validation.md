@@ -87,7 +87,7 @@ The feature improves GitHub API rate-limit headroom for local public-repository 
 
 ## Current Verification Snapshot
 
-At portfolio packaging time, the actual local verification workflow was run:
+After the graph-first quality revision, the actual local verification workflow was run:
 
 ```bash
 pnpm run verify
@@ -97,10 +97,33 @@ Observed result:
 
 - Ruff passed
 - mypy passed
-- pytest collected 23 backend tests and all passed
+- pytest collected 44 backend tests and all passed
 - ESLint passed
 - TypeScript checking passed
 - Vite production build passed
-- Vitest ran 2 frontend test files / 4 tests and all passed
+- Vitest ran 5 frontend test files / 7 tests and all passed
 
-The GitHub Actions `Verify` workflow runs the same normal verification command on push and pull request. The remote workflow status for the portfolio packaging commit is recorded in the project handoff report for that commit.
+The GitHub Actions `Verify` workflow runs the same normal verification command on push and pull request. Remote CI evidence for unpushed local changes is not available until those changes are pushed.
+
+## Graph-First Quality Revision
+
+The focused revision strengthened the existing MVP without adding new product scope.
+
+Implemented and tested changes:
+
+- React Flow graph layout is explicitly non-editable; selection, highlighting, zooming, panning, minimap, controls, filtering, and fit behavior remain.
+- `/api/analyze` and `/api/demo` return opaque `analysis_id` values.
+- `/api/question` uses server-owned analysis state from a bounded in-memory TTL cache and rejects client-supplied graph payloads.
+- GraphSearch v2 adds deterministic query normalization, small explicit concept expansion, lexical seed retrieval, bounded two-hop graph expansion, structural reranking, stable tie-breaking, and beginner-readable deterministic answers.
+- Optional AI explanation remains below the graph result and is discarded when structured path or symbol references fail validation.
+- GitHub blob loading uses bounded asynchronous concurrency with deterministic final file ordering and ordered total source-size enforcement.
+- JavaScript and TypeScript export regression coverage now includes default function/class exports and export aliases such as `foo as bar` and `foo as default`.
+- MIT `LICENSE` was added after checking that no existing license or conflicting project constraint was present.
+
+Focused evidence before final verification:
+
+- Backend focused suite: 44 passed.
+- Frontend focused suite: 5 files / 7 tests passed.
+- Backend Ruff and mypy passed.
+- Frontend ESLint passed.
+- Frontend TypeScript/Vite build passed outside the filesystem sandbox after sandboxed config resolution was denied.

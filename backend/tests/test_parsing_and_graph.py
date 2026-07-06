@@ -67,6 +67,36 @@ def test_typescript_imports_functions_and_classes() -> None:
     assert "AppController" in parsed.exports
 
 
+def test_typescript_export_aliases_preserve_local_symbol_identity() -> None:
+    source = SourceFile(
+        path="src/exports.ts",
+        language=Language.TYPESCRIPT,
+        size=400,
+        content=(
+            "export default function defaultFunction() {}\n"
+            "export default class DefaultClass {}\n"
+            "function foo() {}\n"
+            "function baz() {}\n"
+            "function qux() {}\n"
+            "export { foo };\n"
+            "export { baz as bar };\n"
+            "export { qux as default };\n"
+        ),
+    )
+
+    parsed = JavaScriptLikeExtractor("typescript").parse(source)
+    exported_by_symbol = {symbol.name: symbol.exported for symbol in parsed.symbols}
+
+    assert exported_by_symbol["defaultFunction"] is True
+    assert exported_by_symbol["DefaultClass"] is True
+    assert exported_by_symbol["foo"] is True
+    assert exported_by_symbol["baz"] is True
+    assert exported_by_symbol["qux"] is True
+    assert {"bar", "default", "foo"} <= set(parsed.exports)
+    assert "baz" not in parsed.exports
+    assert "qux" not in parsed.exports
+
+
 def test_python_imports_functions_and_classes() -> None:
     source = SourceFile(
         path="pkg/app.py",

@@ -493,6 +493,16 @@ textarea:disabled {
   border-top: 1px solid #d8e0e2;
 }
 
+.answer-section {
+  margin-bottom: 14px;
+}
+
+.answer-section h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: #253137;
+}
+
 .answer pre {
   margin: 0 0 12px;
   white-space: pre-wrap;
@@ -514,6 +524,11 @@ textarea:disabled {
   display: block;
   color: #6e7d84;
   overflow-wrap: anywhere;
+}
+
+.ai-references {
+  margin: 0 0 12px;
+  padding-left: 18px;
 }
 
 .empty {

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 
 import httpx
@@ -7,7 +8,11 @@ import pytest
 
 from app.models.repository import RepositoryTreeEntry
 from app.parsing.language import detect_language
-from app.repositories.errors import GitHubRateLimitError, InvalidRepositoryUrlError
+from app.repositories.errors import (
+    GitHubRateLimitError,
+    InvalidRepositoryUrlError,
+    SourceLimitExceededError,
+)
 from app.repositories.filtering import (
     FileCollectionLimits,
     eligible_tree_entries,
@@ -57,6 +62,10 @@ def _rate_limited_github_transport() -> httpx.MockTransport:
         )
 
     return httpx.MockTransport(handler)
+
+
+def _encoded_source(text: str) -> str:
+    return base64.b64encode(text.encode()).decode()
 
 
 def test_normalize_github_url_and_owner_repo() -> None:
@@ -136,7 +145,7 @@ async def test_public_repository_loading_with_github_token_sends_authorization(
 
 
 async def test_github_token_is_not_returned_in_snapshots_or_rate_limit_errors() -> None:
-    token = "secret-token-that-must-not-leak"
+    token = "unit-test-auth-placeholder"
     seen_requests: list[httpx.Request] = []
     snapshot = await GitHubRepositoryLoader(
         token=token,
@@ -154,3 +163,103 @@ async def test_github_token_is_not_returned_in_snapshots_or_rate_limit_errors() 
 
     assert token not in str(exc_info.value)
     assert token not in exc_info.value.user_message
+
+
+async def test_blob_loading_uses_bounded_concurrency_and_preserves_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GITHUB_TOKEN", "unit-test-concurrency-placeholder")
+    current_requests = 0
+    max_requests = 0
+    overlap_seen = False
+    seen_requests: list[httpx.Request] = []
+    sources = {
+        "sha-a": _encoded_source("export const a = 1;\n"),
+        "sha-b": _encoded_source("export const b = 2;\n"),
+        "sha-c": _encoded_source("export const c = 3;\n"),
+        "sha-d": _encoded_source("export const d = 4;\n"),
+    }
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal current_requests, max_requests, overlap_seen
+        seen_requests.append(request)
+        if request.url.path == "/repos/gogun-rgb/demo":
+            return httpx.Response(200, json={"private": False, "default_branch": "main"})
+        if request.url.path == "/repos/gogun-rgb/demo/git/trees/main":
+            return httpx.Response(
+                200,
+                json={
+                    "tree": [
+                        {"path": "src/d.ts", "type": "blob", "sha": "sha-d", "size": 20},
+                        {"path": "src/b.ts", "type": "blob", "sha": "sha-b", "size": 20},
+                        {"path": "src/a.ts", "type": "blob", "sha": "sha-a", "size": 20},
+                        {"path": "src/c.ts", "type": "blob", "sha": "sha-c", "size": 20},
+                    ],
+                    "truncated": False,
+                },
+            )
+        sha = request.url.path.rsplit("/", 1)[-1]
+        current_requests += 1
+        max_requests = max(max_requests, current_requests)
+        overlap_seen = overlap_seen or current_requests > 1
+        await asyncio.sleep({"sha-a": 0.04, "sha-b": 0.03, "sha-c": 0.02, "sha-d": 0.01}[sha])
+        current_requests -= 1
+        return httpx.Response(200, json={"content": sources[sha], "encoding": "base64"})
+
+    snapshot = await GitHubRepositoryLoader(
+        transport=httpx.MockTransport(handler),
+        blob_concurrency=2,
+    ).load("gogun-rgb/demo")
+
+    assert [source.path for source in snapshot.files] == [
+        "src/a.ts",
+        "src/b.ts",
+        "src/c.ts",
+        "src/d.ts",
+    ]
+    assert overlap_seen is True
+    assert max_requests == 2
+    assert {request.headers.get("authorization") for request in seen_requests} == {
+        "Bearer unit-test-concurrency-placeholder"
+    }
+    assert "unit-test-concurrency-placeholder" not in snapshot.model_dump_json()
+
+
+async def test_concurrent_blob_loading_enforces_total_source_size_deterministically() -> None:
+    sources = {
+        "sha-a": _encoded_source("export const a = 1;\n"),
+        "sha-b": _encoded_source("export const b = 2;\n"),
+        "sha-c": _encoded_source("export const c = 3;\n"),
+    }
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/repos/gogun-rgb/demo":
+            return httpx.Response(200, json={"private": False, "default_branch": "main"})
+        if request.url.path == "/repos/gogun-rgb/demo/git/trees/main":
+            return httpx.Response(
+                200,
+                json={
+                    "tree": [
+                        {"path": "src/a.ts", "type": "blob", "sha": "sha-a", "size": 20},
+                        {"path": "src/b.ts", "type": "blob", "sha": "sha-b", "size": 20},
+                        {"path": "src/c.ts", "type": "blob", "sha": "sha-c", "size": 20},
+                    ],
+                    "truncated": False,
+                },
+            )
+        sha = request.url.path.rsplit("/", 1)[-1]
+        await asyncio.sleep({"sha-a": 0.03, "sha-b": 0.01, "sha-c": 0.02}[sha])
+        return httpx.Response(200, json={"content": sources[sha], "encoding": "base64"})
+
+    loader = GitHubRepositoryLoader(
+        transport=httpx.MockTransport(handler),
+        limits=FileCollectionLimits(max_total_bytes=35),
+        blob_concurrency=3,
+    )
+
+    with pytest.raises(SourceLimitExceededError) as first:
+        await loader.load("gogun-rgb/demo")
+    with pytest.raises(SourceLimitExceededError) as second:
+        await loader.load("gogun-rgb/demo")
+
+    assert first.value.user_message == second.value.user_message

@@ -21,11 +21,13 @@ Understand a codebase before touching it.
 CodeAtlas turns public repository source into a deterministic graph:
 
 - Loads a public GitHub repository.
+- Fetches supported GitHub blobs with bounded concurrency while preserving deterministic file ordering and source-size limits.
 - Filters generated, dependency, oversized, binary, and unsupported files.
 - Parses TypeScript, TSX, JavaScript, JSX, and Python.
 - Extracts files, functions, classes, exports, local imports, external imports, parser warnings, and reverse-import metadata.
-- Builds `FILE`, `FUNCTION`, `CLASS`, `IMPORTS`, and `CONTAINS` graph relationships.
-- Answers onboarding questions with deterministic graph search before optional AI explanation.
+- Builds `FILE`, `FUNCTION`, `CLASS`, `IMPORTS`, and `CONTAINS` graph relationships deterministically.
+- Stores completed analysis graphs behind opaque server-owned analysis IDs in a bounded in-memory TTL cache.
+- Answers onboarding questions with deterministic GraphSearch v2 before optional supplementary AI explanation.
 
 Graph-first retrieval is the core product principle: CodeAtlas ranks known graph nodes instead of sending an entire repository to an LLM.
 
@@ -66,13 +68,16 @@ The model leaves room for future `CALLS`, `REFERENCES`, `IMPLEMENTS`, and `EXTEN
 
 ## Graph-First Questions
 
-Questions are answered by deterministic graph search:
+Questions are answered by deterministic graph search. The frontend keeps the graph for visualization, but question answering uses the server-owned analysis graph referenced by `analysis_id`; the client does not send an authoritative graph payload back to `/api/question`.
 
-1. Normalize the user question.
-2. Search graph nodes by path, symbol name, imports, exports, and reverse-import metadata.
-3. Return ranked candidate nodes and a suggested starting point.
-4. Optionally ask AI to explain only the retrieved graph context.
-5. Post-validate every AI file and symbol reference on the server.
+1. Normalize the user question, including camelCase, PascalCase, snake_case, kebab-case, and path segment tokenization.
+2. Apply a small deterministic concept map for common onboarding terms such as auth, config, database, API, and GitHub.
+3. Retrieve lexical seed candidates from paths, symbol names, exports, imports, external imports, unresolved imports, and reverse-import metadata.
+4. Expand bounded graph neighborhoods over `IMPORTS` and `CONTAINS` edges up to two hops.
+5. Rerank with deterministic structural evidence while preventing generic high-degree files from dominating.
+6. Return ranked candidate nodes and a suggested starting point.
+7. Optionally ask AI to explain only the retrieved graph context.
+8. Post-validate every structured AI file and symbol reference on the server. If validation fails, the AI explanation is discarded and the deterministic result remains visible.
 
 <p align="center">
   <img src="docs/assets/codeatlas-question.png" alt="CodeAtlas graph-first question result for Where is the scoring logic showing ranked ai-hype-radar code locations" width="520">
@@ -80,7 +85,7 @@ Questions are answered by deterministic graph search:
 
 For the live `ai-hype-radar` graph, the question "Where is the scoring logic?" ranked `src/config/scoring.ts` as the suggested starting point, followed by related scoring tests and calculation utilities.
 
-The application remains fully useful without an OpenAI API key. Optional AI explanation is isolated from deterministic graph generation and is not source-of-truth graph data.
+The application remains fully useful without an OpenAI API key. Optional AI explanation is shown below the deterministic graph result and is not source-of-truth graph data.
 
 ## Architecture
 
@@ -92,11 +97,12 @@ flowchart LR
   D --> E["ParserRegistry"]
   E --> F["SymbolExtractor"]
   F --> G["GraphBuilder"]
-  G --> H["React Flow + Dagre UI"]
-  G --> I["GraphSearch"]
-  I --> J["Deterministic answer"]
-  I --> K["Optional AI explanation"]
-  K --> L["Server-side reference validation"]
+  G --> H["Server-owned analysis cache"]
+  H --> I["React Flow + Dagre UI"]
+  H --> J["GraphSearch v2"]
+  J --> K["Deterministic answer"]
+  J --> L["Optional AI explanation"]
+  L --> M["Server-side reference validation"]
 ```
 
 Backend responsibilities are split across repository loading, filtering, language detection, parsing, graph building, search, and optional AI explanation. The frontend uses React, TypeScript, React Flow, and Dagre for the graph workspace.
@@ -143,8 +149,8 @@ This runs:
 
 Current verified packaging snapshot:
 
-- backend pytest: 23 passed
-- frontend Vitest: 2 files / 4 tests passed
+- backend pytest: 44 passed
+- frontend Vitest: 5 files / 7 tests passed
 - GitHub Actions `Verify`: configured to run the same workflow on push and pull request
 
 See the [validation and cross-check record](docs/validation.md) for implementation review history and defect-reproduction evidence.
@@ -187,14 +193,18 @@ The backend runs through FastAPI/Uvicorn and the frontend runs through Vite.
 - Public GitHub repositories only.
 - GitHub API rate limits may apply.
 - Large repositories are limited by file count and total source size.
+- Server-side analysis IDs use a process-local in-memory TTL cache, not persistent storage.
+- GraphSearch v2 is deterministic graph retrieval, not arbitrary semantic code comprehension.
+- Deterministic concept expansion is intentionally small and explicit.
 - Full `CALLS` resolution is not implemented.
 - Absolute import alias resolution is not included.
+- Complete ECMAScript module alias resolution is not included.
 - Parser warnings may indicate incomplete graph data.
-- Optional AI explanation is not source-of-truth graph data.
+- Optional AI explanation is supplementary and is discarded when structured references fail validation.
 
 ## Roadmap
 
 - Add call/reference analysis where language support is strong enough.
-- Add repository-level caching.
+- Add persistent repository caching.
 - Add snippet retrieval for selected candidates with strict size caps.
 - Add graph clustering for large projects.

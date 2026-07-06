@@ -14,6 +14,7 @@ const DEFAULT_FILTERS: Filters = { FILE: true, FUNCTION: true, CLASS: true };
 
 export function App(): ReactElement {
   const [graph, setGraph] = useState<CodeGraph | null>(null);
+  const [analysisId, setAnalysisId] = useState<string | null>(null);
   const [repository, setRepository] = useState<string>("gogun-rgb/ai-hype-radar");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
@@ -43,6 +44,7 @@ export function App(): ReactElement {
     setError(null);
     try {
       const response = await analyzeRepository(value);
+      setAnalysisId(response.analysis_id);
       setGraph(response.graph);
       setRepository(response.repository);
       setSelectedId(response.graph.nodes[0]?.id ?? null);
@@ -58,6 +60,7 @@ export function App(): ReactElement {
     setError(null);
     try {
       const response = await loadDemoGraph();
+      setAnalysisId(response.analysis_id);
       setGraph(response.graph);
       setRepository(response.repository);
       setSelectedId(response.graph.nodes.find((node) => node.type === "FILE")?.id ?? null);
@@ -127,7 +130,7 @@ export function App(): ReactElement {
         </section>
         <aside className="right-rail">
           <Inspector graph={graph} selectedId={selectedId} />
-          <QuestionPanel graph={graph} aiAvailable={aiAvailable} />
+          <QuestionPanel analysisId={analysisId} aiAvailable={aiAvailable} />
         </aside>
       </main>
     </div>

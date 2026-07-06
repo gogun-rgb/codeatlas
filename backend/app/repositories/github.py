@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import os
 import re
@@ -25,6 +26,7 @@ from app.repositories.filtering import (
 )
 
 GITHUB_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+DEFAULT_BLOB_CONCURRENCY = 8
 
 
 def normalize_github_repo(value: str) -> RepositoryRef:
@@ -51,11 +53,13 @@ class GitHubRepositoryLoader:
         limits: FileCollectionLimits | None = None,
         token: str | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
+        blob_concurrency: int = DEFAULT_BLOB_CONCURRENCY,
     ) -> None:
         self._client = client
         self._limits = limits or FileCollectionLimits()
         self._token = token if token is not None else os.getenv("GITHUB_TOKEN")
         self._transport = transport
+        self._blob_concurrency = max(1, blob_concurrency)
 
     async def load(self, repository: str) -> RepositorySnapshot:
         ref = normalize_github_repo(repository)
@@ -136,15 +140,22 @@ class GitHubRepositoryLoader:
         ref: RepositoryRef,
         entries: list[RepositoryTreeEntry],
     ) -> list[SourceFile]:
+        semaphore = asyncio.Semaphore(self._blob_concurrency)
+        fetchable_entries = [
+            entry
+            for entry in entries
+            if entry.size is None or entry.size <= self._limits.max_file_bytes
+        ]
+        fetched = await asyncio.gather(
+            *[
+                self._fetch_blob_payload(client, ref, entry, semaphore)
+                for entry in fetchable_entries
+            ]
+        )
+
         files: list[SourceFile] = []
         total = 0
-        for entry in entries:
-            if entry.size is not None and entry.size > self._limits.max_file_bytes:
-                continue
-            payload = await self._request_json(
-                client,
-                f"/repos/{ref.owner}/{ref.name}/git/blobs/{entry.sha}",
-            )
+        for entry, payload in fetched:
             content = payload.get("content")
             encoding = payload.get("encoding")
             if not isinstance(content, str) or encoding != "base64":
@@ -159,3 +170,17 @@ class GitHubRepositoryLoader:
             if source_file is not None:
                 files.append(source_file)
         return files
+
+    async def _fetch_blob_payload(
+        self,
+        client: httpx.AsyncClient,
+        ref: RepositoryRef,
+        entry: RepositoryTreeEntry,
+        semaphore: asyncio.Semaphore,
+    ) -> tuple[RepositoryTreeEntry, dict[str, Any]]:
+        async with semaphore:
+            payload = await self._request_json(
+                client,
+                f"/repos/{ref.owner}/{ref.name}/git/blobs/{entry.sha}",
+            )
+        return entry, payload

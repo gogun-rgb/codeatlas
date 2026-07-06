@@ -1,4 +1,4 @@
-import type { AnalyzeResponse, CodeGraph, QuestionAnswer } from "./types";
+import type { AnalyzeResponse, QuestionAnswer } from "./types";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
@@ -28,12 +28,12 @@ export function loadDemoGraph(): Promise<AnalyzeResponse> {
 
 export function askQuestion(
   question: string,
-  graph: CodeGraph,
+  analysisId: string,
   useAi: boolean,
 ): Promise<QuestionAnswer> {
   return request<QuestionAnswer>("/api/question", {
     method: "POST",
-    body: JSON.stringify({ question, graph, use_ai: useAi }),
+    body: JSON.stringify({ question, analysis_id: analysisId, use_ai: useAi }),
   });
 }
 

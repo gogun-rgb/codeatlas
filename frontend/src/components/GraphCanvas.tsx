@@ -5,8 +5,6 @@ import {
   MiniMap,
   ReactFlow,
   type NodeMouseHandler,
-  useEdgesState,
-  useNodesState,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { Search } from "lucide-react";
@@ -46,9 +44,6 @@ export function GraphCanvas({
     () => (visible ? toFlowGraph(visible, selectedId, highlighted) : { nodes: [], edges: [] }),
     [visible, selectedId, highlighted],
   );
-  const [nodes, , onNodesChange] = useNodesState(flow.nodes);
-  const [edges, , onEdgesChange] = useEdgesState(flow.edges);
-
   const onNodeClick: NodeMouseHandler = (_event, node) => onSelect(node.id);
 
   return (
@@ -66,12 +61,13 @@ export function GraphCanvas({
       </div>
       <div className="graph-canvas">
         <ReactFlow
-          nodes={flow.nodes.length ? flow.nodes : nodes}
-          edges={flow.edges.length ? flow.edges : edges}
+          nodes={flow.nodes}
+          edges={flow.edges}
           nodeTypes={nodeTypes}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
           onNodeClick={onNodeClick}
+          nodesDraggable={false}
+          nodesConnectable={false}
+          elementsSelectable
           fitView
           minZoom={0.15}
           maxZoom={1.8}

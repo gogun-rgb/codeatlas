@@ -25,6 +25,7 @@ export interface CodeGraph {
 }
 
 export interface AnalyzeResponse {
+  analysis_id: string;
   repository: string;
   graph: CodeGraph;
 }
@@ -39,7 +40,7 @@ export interface QuestionAnswer {
   question: string;
   candidates: SearchCandidate[];
   deterministic_answer: string;
-  ai_status: "disabled" | "unavailable" | "generated";
+  ai_status: "disabled" | "unavailable" | "validation_failed" | "generated";
   ai_explanation?: string | null;
   ai_references: Array<{ path: string; symbol?: string | null; reason: string }>;
 }

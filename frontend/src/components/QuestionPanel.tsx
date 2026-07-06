@@ -1,14 +1,14 @@
 import { useState, type FormEvent, type ReactElement } from "react";
 import { MessageSquareText, Sparkles } from "lucide-react";
-import type { CodeGraph, QuestionAnswer } from "../types";
+import type { QuestionAnswer } from "../types";
 import { askQuestion } from "../api";
 
 interface Props {
-  graph: CodeGraph | null;
+  analysisId: string | null;
   aiAvailable: boolean;
 }
 
-export function QuestionPanel({ graph, aiAvailable }: Props): ReactElement {
+export function QuestionPanel({ analysisId, aiAvailable }: Props): ReactElement {
   const [question, setQuestion] = useState("Where is the scoring logic?");
   const [answer, setAnswer] = useState<QuestionAnswer | null>(null);
   const [useAi, setUseAi] = useState(false);
@@ -17,13 +17,13 @@ export function QuestionPanel({ graph, aiAvailable }: Props): ReactElement {
 
   async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
-    if (!graph || !question.trim()) {
+    if (!analysisId || !question.trim()) {
       return;
     }
     setLoading(true);
     setError(null);
     try {
-      setAnswer(await askQuestion(question, graph, useAi && aiAvailable));
+      setAnswer(await askQuestion(question, analysisId, useAi && aiAvailable));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Question failed.");
     } finally {
@@ -42,7 +42,7 @@ export function QuestionPanel({ graph, aiAvailable }: Props): ReactElement {
           id="question"
           value={question}
           onChange={(event) => setQuestion(event.target.value)}
-          disabled={!graph || loading}
+          disabled={!analysisId || loading}
           rows={3}
         />
         <label className="ai-toggle">
@@ -55,7 +55,11 @@ export function QuestionPanel({ graph, aiAvailable }: Props): ReactElement {
           <Sparkles size={15} aria-hidden="true" />
           <span>{aiAvailable ? "AI explanation" : "AI unavailable"}</span>
         </label>
-        <button type="submit" disabled={!graph || loading || !question.trim()} title="Search graph">
+        <button
+          type="submit"
+          disabled={!analysisId || loading || !question.trim()}
+          title="Search graph"
+        >
           <MessageSquareText size={16} aria-hidden="true" />
           Ask graph
         </button>
@@ -63,7 +67,29 @@ export function QuestionPanel({ graph, aiAvailable }: Props): ReactElement {
       {error ? <p className="error">{error}</p> : null}
       {answer ? (
         <div className="answer">
-          <pre>{answer.ai_explanation && answer.ai_status === "generated" ? answer.ai_explanation : answer.deterministic_answer}</pre>
+          <section className="answer-section">
+            <h3>Graph result</h3>
+            <pre>{answer.deterministic_answer}</pre>
+          </section>
+          {answer.ai_status === "generated" && answer.ai_explanation ? (
+            <section className="answer-section">
+              <h3>Optional AI explanation</h3>
+              <pre>{answer.ai_explanation}</pre>
+              {answer.ai_references.length ? (
+                <ul className="ai-references">
+                  {answer.ai_references.map((reference) => (
+                    <li key={`${reference.path}:${reference.symbol ?? ""}`}>
+                      <strong>{reference.path}</strong>
+                      {reference.symbol ? <span>{reference.symbol}</span> : null}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </section>
+          ) : null}
+          {answer.ai_status === "unavailable" || answer.ai_status === "validation_failed" ? (
+            <p className="muted">Optional AI explanation unavailable.</p>
+          ) : null}
           <ol>
             {answer.candidates.slice(0, 5).map((candidate) => (
               <li key={candidate.node.id}>

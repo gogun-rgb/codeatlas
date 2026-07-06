@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from typing import Any
 
 from tree_sitter_language_pack import get_parser
@@ -27,6 +28,16 @@ EXPORT_NAME_RE = re.compile(
     r"\bexport\s+(?:async\s+)?(?:function|class|const|let|var)\s+([A-Za-z_$][\w$]*)"
 )
 EXPORT_LIST_RE = re.compile(r"\bexport\s*\{([^}]+)\}")
+EXPORT_DEFAULT_NAMED_RE = re.compile(
+    r"\bexport\s+default\s+(?:async\s+)?(?:function|class)\s+([A-Za-z_$][\w$]*)"
+)
+EXPORT_DEFAULT_RE = re.compile(r"\bexport\s+default\b")
+
+
+@dataclass(frozen=True)
+class ExportInfo:
+    exported_names: set[str]
+    local_names: set[str]
 
 
 class JavaScriptLikeExtractor(SymbolExtractor):
@@ -41,7 +52,7 @@ class JavaScriptLikeExtractor(SymbolExtractor):
         root: Any = tree.root_node()
         imports: list[ImportRef] = []
         symbols: list[SymbolInfo] = []
-        exported_names = self._extract_exports(source_file.content)
+        export_info = self._extract_exports(source, root)
 
         for node in walk(root):
             kind = node_kind(node)
@@ -57,7 +68,9 @@ class JavaScriptLikeExtractor(SymbolExtractor):
                 )
                 if symbol is not None:
                     symbols.append(
-                        symbol.model_copy(update={"exported": symbol.name in exported_names})
+                        symbol.model_copy(
+                            update={"exported": symbol.name in export_info.local_names}
+                        )
                     )
             elif kind == "class_declaration":
                 symbol = self._symbol_from_named_node(
@@ -65,7 +78,9 @@ class JavaScriptLikeExtractor(SymbolExtractor):
                 )
                 if symbol is not None:
                     symbols.append(
-                        symbol.model_copy(update={"exported": symbol.name in exported_names})
+                        symbol.model_copy(
+                            update={"exported": symbol.name in export_info.local_names}
+                        )
                     )
             elif kind == "method_definition":
                 container_name = self._nearest_class_name(source, node)
@@ -79,7 +94,12 @@ class JavaScriptLikeExtractor(SymbolExtractor):
                 if symbol is not None:
                     symbols.append(symbol)
             elif kind == "variable_declarator":
-                symbol = self._symbol_from_variable(source, source_file.path, node, exported_names)
+                symbol = self._symbol_from_variable(
+                    source,
+                    source_file.path,
+                    node,
+                    export_info.local_names,
+                )
                 if symbol is not None:
                     symbols.append(symbol)
 
@@ -89,7 +109,7 @@ class JavaScriptLikeExtractor(SymbolExtractor):
             language=source_file.language.value,
             size=source_file.size,
             imports=dedupe_imports(imports),
-            exports=sorted(exported_names),
+            exports=sorted(export_info.exported_names),
             symbols=sorted(symbols, key=lambda item: (item.start_line, item.kind.value, item.name)),
             parser_errors=parser_errors,
         )
@@ -147,7 +167,7 @@ class JavaScriptLikeExtractor(SymbolExtractor):
         source: bytes,
         path: str,
         node: Any,
-        exported_names: set[str],
+        exported_local_names: set[str],
     ) -> SymbolInfo | None:
         value = node.child_by_field_name("value")
         if value is None or node_kind(value) not in {"arrow_function", "function"}:
@@ -166,18 +186,42 @@ class JavaScriptLikeExtractor(SymbolExtractor):
             end_line=end_line,
             start_byte=start_byte,
             end_byte=end_byte,
-            exported=name in exported_names,
+            exported=name in exported_local_names,
         )
 
-    def _extract_exports(self, content: str) -> set[str]:
-        names = set(EXPORT_NAME_RE.findall(content))
-        for group in EXPORT_LIST_RE.findall(content):
-            for item in group.split(","):
-                token = item.strip()
-                if not token:
-                    continue
-                names.add(token.split(" as ")[-1].strip())
-        return names
+    def _extract_exports(self, source: bytes, root: Any) -> ExportInfo:
+        exported_names: set[str] = set()
+        local_names: set[str] = set()
+        for node in walk(root):
+            if node_kind(node) != "export_statement":
+                continue
+            text = node_text(source, node)
+            has_export_from = EXPORT_FROM_RE.search(text) is not None
+            for name in EXPORT_NAME_RE.findall(text):
+                exported_names.add(name)
+                local_names.add(name)
+            default_match = EXPORT_DEFAULT_NAMED_RE.search(text)
+            if default_match is not None:
+                exported_names.add("default")
+                local_names.add(default_match.group(1))
+            elif EXPORT_DEFAULT_RE.search(text) is not None:
+                exported_names.add("default")
+            for group in EXPORT_LIST_RE.findall(text):
+                for item in group.split(","):
+                    token = item.strip()
+                    if not token:
+                        continue
+                    local_name, exported_name = self._export_specifier_names(token)
+                    exported_names.add(exported_name)
+                    if not has_export_from:
+                        local_names.add(local_name)
+        return ExportInfo(exported_names=exported_names, local_names=local_names)
+
+    def _export_specifier_names(self, token: str) -> tuple[str, str]:
+        parts = [part.strip() for part in token.split(" as ", 1)]
+        if len(parts) == 2:
+            return parts[0], parts[1]
+        return token, token
 
     def _nearest_class_name(self, source: bytes, node: Any) -> str | None:
         parent = node_parent(node)

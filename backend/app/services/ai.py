@@ -50,12 +50,14 @@ class AIExplanationService:
         except (RuntimeError, ValidationError, json.JSONDecodeError):
             return answer.model_copy(update={"ai_status": "unavailable"})
 
-        explanation = validate_ai_explanation(graph, explanation)
+        validated = validate_ai_explanation(graph, explanation)
+        if validated is None:
+            return answer.model_copy(update={"ai_status": "validation_failed"})
         return answer.model_copy(
             update={
                 "ai_status": "generated",
-                "ai_explanation": explanation.summary,
-                "ai_references": [reference.model_dump() for reference in explanation.references],
+                "ai_explanation": validated.summary,
+                "ai_references": [reference.model_dump() for reference in validated.references],
             }
         )
 
@@ -90,7 +92,9 @@ class OpenAIResponsesClient:
                     "role": "system",
                     "content": (
                         "Explain code graph search results for a beginner. "
-                        "Use only the provided graph context. Do not invent paths or symbols."
+                        "Use only the provided graph context. Do not invent paths or symbols. "
+                        "Mention a file path or symbol name only when it appears in your "
+                        "structured references."
                     ),
                 },
                 {
@@ -177,7 +181,7 @@ def build_candidate_context(
     return context
 
 
-def validate_ai_explanation(graph: CodeGraph, explanation: AIExplanation) -> AIExplanation:
+def validate_ai_explanation(graph: CodeGraph, explanation: AIExplanation) -> AIExplanation | None:
     paths = {node.path for node in graph.nodes}
     symbols_by_path: dict[str, set[str]] = {}
     for node in graph.nodes:
@@ -187,8 +191,8 @@ def validate_ai_explanation(graph: CodeGraph, explanation: AIExplanation) -> AIE
     valid_references: list[AIReference] = []
     for reference in explanation.references:
         if reference.path not in paths:
-            continue
+            return None
         if reference.symbol and reference.symbol not in symbols_by_path.get(reference.path, set()):
-            continue
+            return None
         valid_references.append(reference)
     return explanation.model_copy(update={"references": valid_references})
