@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type ReactElement } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactElement } from "react";
 import { MessageSquareText, Sparkles } from "lucide-react";
 import type { QuestionAnswer } from "../types";
 import { askQuestion } from "../api";
@@ -14,20 +14,49 @@ export function QuestionPanel({ analysisId, aiAvailable }: Props): ReactElement 
   const [useAi, setUseAi] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const latestAnalysisId = useRef<string | null>(analysisId);
+  const requestId = useRef(0);
+
+  useEffect(() => {
+    latestAnalysisId.current = analysisId;
+    requestId.current += 1;
+    setAnswer(null);
+    setError(null);
+    setLoading(false);
+  }, [analysisId]);
 
   async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
     if (!analysisId || !question.trim()) {
       return;
     }
+    const activeAnalysisId = analysisId;
+    const activeRequestId = requestId.current + 1;
+    requestId.current = activeRequestId;
     setLoading(true);
     setError(null);
     try {
-      setAnswer(await askQuestion(question, analysisId, useAi && aiAvailable));
+      const nextAnswer = await askQuestion(question, activeAnalysisId, useAi && aiAvailable);
+      if (
+        requestId.current === activeRequestId &&
+        latestAnalysisId.current === activeAnalysisId
+      ) {
+        setAnswer(nextAnswer);
+      }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Question failed.");
+      if (
+        requestId.current === activeRequestId &&
+        latestAnalysisId.current === activeAnalysisId
+      ) {
+        setError(caught instanceof Error ? caught.message : "Question failed.");
+      }
     } finally {
-      setLoading(false);
+      if (
+        requestId.current === activeRequestId &&
+        latestAnalysisId.current === activeAnalysisId
+      ) {
+        setLoading(false);
+      }
     }
   }
 

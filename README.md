@@ -149,8 +149,8 @@ This runs:
 
 Current verified packaging snapshot:
 
-- backend pytest: 44 passed
-- frontend Vitest: 5 files / 7 tests passed
+- backend pytest: 47 passed
+- frontend Vitest: 5 files / 11 tests passed
 - GitHub Actions `Verify`: configured to run the same workflow on push and pull request
 
 See the [validation and cross-check record](docs/validation.md) for implementation review history and defect-reproduction evidence.

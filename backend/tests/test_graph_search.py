@@ -233,3 +233,73 @@ def test_high_degree_generic_file_does_not_outrank_relevant_auth_candidates() ->
     )
 
     assert session_candidate.score > index_candidate.score
+
+
+def test_converging_auth_seeds_do_not_promote_generic_hub_above_direct_matches() -> None:
+    seed_paths = [
+        "src/auth.ts",
+        "src/authentication.ts",
+        "src/authorize.ts",
+        "src/authorization.ts",
+        "src/signin.ts",
+        "src/session.ts",
+        "src/credential.ts",
+        "src/identity.ts",
+    ]
+    graph = CodeGraph(
+        nodes=[
+            *[
+                _file(path, {"exports": [path.rsplit("/", 1)[-1].split(".", 1)[0]]})
+                for path in seed_paths
+            ],
+            _file("src/index.ts", {"importedBy": seed_paths}),
+        ],
+        edges=[_imports(path, "src/index.ts") for path in seed_paths],
+    )
+
+    candidates = GraphSearch().search(graph, "Where is login handled?", limit=12)
+    index_candidate = next(
+        candidate for candidate in candidates if candidate.node.path == "src/index.ts"
+    )
+    direct_candidates = [
+        candidate for candidate in candidates if candidate.node.path in seed_paths
+    ]
+
+    assert direct_candidates
+    assert max(candidate.score for candidate in direct_candidates) > index_candidate.score
+    assert candidates[0].node.path in seed_paths
+
+
+def test_relevant_high_degree_file_keeps_direct_lexical_advantage() -> None:
+    importer_paths = [
+        "src/pages/a.ts",
+        "src/pages/b.ts",
+        "src/pages/c.ts",
+        "src/pages/d.ts",
+        "src/pages/e.ts",
+        "src/pages/f.ts",
+    ]
+    graph = CodeGraph(
+        nodes=[
+            _file(
+                "src/session/index.ts",
+                {
+                    "exports": ["createSession"],
+                    "importedBy": importer_paths,
+                },
+            ),
+            *[_file(path) for path in importer_paths],
+            _file("src/identity.ts", {"exports": ["IdentityService"]}),
+        ],
+        edges=[
+            *[_imports(path, "src/session/index.ts") for path in importer_paths],
+            _imports("src/session/index.ts", "src/identity.ts"),
+        ],
+    )
+
+    candidates = GraphSearch().search(graph, "Where is session handled?", limit=12)
+
+    assert candidates[0].node.path == "src/session/index.ts"
+    assert candidates[0].score > next(
+        candidate for candidate in candidates if candidate.node.path == "src/identity.ts"
+    ).score

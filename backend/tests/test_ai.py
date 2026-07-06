@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from app.graph.builder import GraphBuilder
+import httpx
+from openai import APIConnectionError
+
 from app.graph.search import GraphSearch
-from app.models.graph import CodeGraph, SearchCandidate
-from app.models.repository import Language, SourceFile
-from app.parsing.registry import ParserRegistry
+from app.models.graph import CodeGraph, GraphNode, NodeType, SearchCandidate
 from app.services.ai import AIExplanation, AIExplanationService, AIReference
 
 
@@ -61,18 +61,38 @@ class FailingAIClient:
         raise RuntimeError("AI client failed")
 
 
+class OpenAIConnectionFailureClient:
+    async def create_explanation(
+        self,
+        question: str,
+        candidates: list[SearchCandidate],
+        graph: CodeGraph,
+    ) -> AIExplanation:
+        raise APIConnectionError(
+            request=httpx.Request("POST", "https://api.openai.test/v1/responses")
+        )
+
+
 def make_graph() -> CodeGraph:
-    parsed = ParserRegistry().parse_files(
-        [
-            SourceFile(
+    return CodeGraph(
+        nodes=[
+            GraphNode(
+                id="file:src/scoring.ts",
+                type=NodeType.FILE,
+                label="scoring.ts",
                 path="src/scoring.ts",
-                language=Language.TYPESCRIPT,
-                size=80,
-                content="export function calculateScore() { return 1; }\n",
-            )
-        ]
+                metadata={"exports": ["calculateScore"]},
+            ),
+            GraphNode(
+                id="function:src/scoring.ts:<module>:calculateScore:1:0:10",
+                type=NodeType.FUNCTION,
+                label="calculateScore",
+                path="src/scoring.ts",
+                metadata={"startLine": 1, "exported": True},
+            ),
+        ],
+        edges=[],
     )
-    return GraphBuilder().build(parsed)
 
 
 async def test_ai_service_accepts_valid_explanation() -> None:
@@ -124,6 +144,21 @@ async def test_ai_client_failure_keeps_deterministic_answer() -> None:
 
     assert enriched.ai_status == "unavailable"
     assert enriched.ai_explanation is None
+    assert enriched.deterministic_answer == answer.deterministic_answer
+
+
+async def test_openai_sdk_exception_keeps_deterministic_answer_without_live_request() -> None:
+    graph = make_graph()
+    answer = GraphSearch().answer(graph, "Where is scoring?")
+
+    enriched = await AIExplanationService(client=OpenAIConnectionFailureClient()).explain(
+        answer,
+        graph,
+    )
+
+    assert enriched.ai_status == "unavailable"
+    assert enriched.ai_explanation is None
+    assert enriched.ai_references == []
     assert enriched.deterministic_answer == answer.deterministic_answer
 
 

@@ -4,6 +4,7 @@ import json
 import os
 from typing import Protocol
 
+from openai import OpenAIError
 from pydantic import BaseModel, Field, ValidationError
 
 from app.models.graph import CodeGraph, GraphQuestionAnswer, SearchCandidate
@@ -47,7 +48,7 @@ class AIExplanationService:
                 answer.candidates,
                 graph,
             )
-        except (RuntimeError, ValidationError, json.JSONDecodeError):
+        except (OpenAIError, RuntimeError, ValidationError, json.JSONDecodeError):
             return answer.model_copy(update={"ai_status": "unavailable"})
 
         validated = validate_ai_explanation(graph, explanation)

@@ -97,13 +97,13 @@ Observed result:
 
 - Ruff passed
 - mypy passed
-- pytest collected 44 backend tests and all passed
+- pytest collected 47 backend tests and all passed
 - ESLint passed
 - TypeScript checking passed
 - Vite production build passed
-- Vitest ran 5 frontend test files / 7 tests and all passed
+- Vitest ran 5 frontend test files / 11 tests and all passed
 
-The GitHub Actions `Verify` workflow runs the same normal verification command on push and pull request. Remote CI evidence for unpushed local changes is not available until those changes are pushed.
+The GitHub Actions `Verify` workflow runs the same normal verification command on push and pull request. Remote CI must be checked against the exact pushed commit and is not inferred from local verification alone.
 
 ## Graph-First Quality Revision
 

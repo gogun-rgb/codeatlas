@@ -128,13 +128,24 @@ class GraphLink:
 class CandidateAccumulator:
     node: GraphNode
     score: float = 0.0
+    lexical_score: float = 0.0
+    structural_score: float = 0.0
     reasons: list[str] = field(default_factory=list)
     reason_set: set[str] = field(default_factory=set)
 
-    def add(self, points: float, reason: str) -> None:
+    def add(self, points: float, reason: str, evidence: str = "lexical") -> None:
         if points <= 0:
             return
-        self.score = round(self.score + points, 4)
+        applied_points = points
+        if evidence == "structural":
+            cap = 24.0 if self.lexical_score > 0 else 10.0
+            applied_points = min(points, max(cap - self.structural_score, 0.0))
+            if applied_points <= 0:
+                return
+            self.structural_score = round(self.structural_score + applied_points, 4)
+        else:
+            self.lexical_score = round(self.lexical_score + applied_points, 4)
+        self.score = round(self.score + applied_points, 4)
         if reason not in self.reason_set:
             self.reason_set.add(reason)
             self.reasons.append(reason)
@@ -231,7 +242,7 @@ class GraphSearch:
                 accumulator.add(6.0, f"expanded {concept} concept: {token}")
             if token in terms.exports:
                 accumulator.add(6.0, f"expanded {concept} concept: {token}")
-            if token in terms.imports or token in terms.imported_by:
+            if token in terms.imports:
                 accumulator.add(3.0, f"expanded {concept} dependency context: {token}")
 
     def _add_graph_expansion_evidence(
@@ -266,7 +277,7 @@ class GraphSearch:
                     distance = depth + 1
                     points = structural_points(link.kind, distance, seed_score)
                     reason = structural_reason(link.kind, distance, seed_node)
-                    accumulators[link.target_id].add(points, reason)
+                    accumulators[link.target_id].add(points, reason, evidence="structural")
                     queue.append((link.target_id, distance))
 
     def _add_structural_reranking(
@@ -279,7 +290,7 @@ class GraphSearch:
             imported_by = accumulator.node.metadata.get("importedBy")
             if isinstance(imported_by, list) and len(imported_by) >= 2:
                 points = min(2.0, len(imported_by) * 0.25)
-                accumulator.add(points, "weak reverse-import centrality")
+                accumulator.add(points, "weak reverse-import centrality", evidence="structural")
 
 
 def normalize_tokens(question: str) -> list[str]:
