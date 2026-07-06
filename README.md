@@ -112,6 +112,15 @@ Install frontend dependencies:
 pnpm install
 ```
 
+Optional local environment:
+
+```bash
+GITHUB_TOKEN=
+OPENAI_API_KEY=
+```
+
+CodeAtlas can analyze public GitHub repositories without a `GITHUB_TOKEN`, but unauthenticated GitHub API rate limits are lower. Setting `GITHUB_TOKEN` for the backend gives local analysis and portfolio demos more GitHub API rate-limit headroom. It is optional and does not change the public-repository-only MVP scope.
+
 Run the app:
 
 ```bash

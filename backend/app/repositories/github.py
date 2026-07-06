@@ -50,10 +50,12 @@ class GitHubRepositoryLoader:
         client: httpx.AsyncClient | None = None,
         limits: FileCollectionLimits | None = None,
         token: str | None = None,
+        transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._client = client
         self._limits = limits or FileCollectionLimits()
         self._token = token if token is not None else os.getenv("GITHUB_TOKEN")
+        self._transport = transport
 
     async def load(self, repository: str) -> RepositorySnapshot:
         ref = normalize_github_repo(repository)
@@ -98,7 +100,12 @@ class GitHubRepositoryLoader:
         }
         if self._token:
             headers["Authorization"] = "Bearer " + self._token
-        return httpx.AsyncClient(base_url="https://api.github.com", headers=headers, timeout=20.0)
+        return httpx.AsyncClient(
+            base_url="https://api.github.com",
+            headers=headers,
+            timeout=20.0,
+            transport=self._transport,
+        )
 
     async def _request_json(
         self,
