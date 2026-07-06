@@ -8,20 +8,79 @@
 >
 > CodeAtlas builds a memory map of the codebase.
 
-CodeAtlas is a portfolio-quality developer tool for codebase onboarding. It accepts a public GitHub repository, performs static analysis, and renders an interactive graph of files, functions, classes, imports, and containment relationships.
+CodeAtlas is a graph-first codebase onboarding tool. It accepts a public GitHub repository, performs static analysis, and renders an interactive map of files, symbols, imports, and containment relationships.
 
-The product idea is simple: understand a codebase before touching it.
+Understand a codebase before touching it.
 
-## What It Solves
+<p align="center">
+  <img src="docs/assets/codeatlas-demo.gif" alt="CodeAtlas workflow showing repository analysis, graph visualization, and graph-first question results" width="900">
+</p>
 
-Beginner developers often need to answer practical questions before making a change:
+## What It Does
 
-- Where is the scoring logic?
-- Where should authentication change?
-- Which files depend on this file?
-- Where does GitHub data enter the application?
+CodeAtlas turns public repository source into a deterministic graph:
 
-CodeAtlas treats those questions as graph retrieval problems first. It builds a deterministic code graph, searches that graph locally, and returns ranked starting points. Optional AI explanation is isolated behind a small service, and it can only explain retrieved graph context.
+- Loads a public GitHub repository.
+- Filters generated, dependency, oversized, binary, and unsupported files.
+- Parses TypeScript, TSX, JavaScript, JSX, and Python.
+- Extracts files, functions, classes, exports, local imports, external imports, parser warnings, and reverse-import metadata.
+- Builds `FILE`, `FUNCTION`, `CLASS`, `IMPORTS`, and `CONTAINS` graph relationships.
+- Answers onboarding questions with deterministic graph search before optional AI explanation.
+
+Graph-first retrieval is the core product principle: CodeAtlas ranks known graph nodes instead of sending an entire repository to an LLM.
+
+## Live Repository Analysis
+
+CodeAtlas was manually tested against the public repository [`gogun-rgb/ai-hype-radar`](https://github.com/gogun-rgb/ai-hype-radar).
+
+Observed live analysis snapshot:
+
+- 60 files
+- 121 functions
+- 2 classes
+- 183 graph nodes
+
+<p align="center">
+  <img src="docs/assets/codeatlas-live-analysis.png" alt="CodeAtlas live analysis of gogun-rgb/ai-hype-radar showing 60 files, 121 functions, 2 classes, and 183 graph nodes" width="900">
+</p>
+
+The screenshot shows `0 imports` for this repository because it uses TypeScript `@/*` path aliases. Absolute import alias resolution is intentionally outside the current MVP scope.
+
+## Graph Visualization
+
+The demo fixture is deterministic and intentionally small, which makes graph relationships easy to inspect.
+
+<p align="center">
+  <img src="docs/assets/codeatlas-graph.png" alt="CodeAtlas demo graph fixture showing files, functions, classes, imports, containment edges, and inspector metadata" width="900">
+</p>
+
+The MVP graph model includes:
+
+- `FILE`: supported source files
+- `FUNCTION`: parsed top-level functions, function expressions, and class methods where supported
+- `CLASS`: parsed classes
+- `IMPORTS`: resolved local relative imports between known repository files
+- `CONTAINS`: file-to-symbol relationships
+
+The model leaves room for future `CALLS`, `REFERENCES`, `IMPLEMENTS`, and `EXTENDS` edges, but the MVP does not claim full call resolution.
+
+## Graph-First Questions
+
+Questions are answered by deterministic graph search:
+
+1. Normalize the user question.
+2. Search graph nodes by path, symbol name, imports, exports, and reverse-import metadata.
+3. Return ranked candidate nodes and a suggested starting point.
+4. Optionally ask AI to explain only the retrieved graph context.
+5. Post-validate every AI file and symbol reference on the server.
+
+<p align="center">
+  <img src="docs/assets/codeatlas-question.png" alt="CodeAtlas graph-first question result for Where is the scoring logic showing ranked ai-hype-radar code locations" width="520">
+</p>
+
+For the live `ai-hype-radar` graph, the question "Where is the scoring logic?" ranked `src/config/scoring.ts` as the suggested starting point, followed by related scoring tests and calculation utilities.
+
+The application remains fully useful without an OpenAI API key. Optional AI explanation is isolated from deterministic graph generation and is not source-of-truth graph data.
 
 ## Architecture
 
@@ -40,11 +99,17 @@ flowchart LR
   K --> L["Server-side reference validation"]
 ```
 
-Backend responsibilities are separated into loader, filtering, language detection, parser registry, symbol extraction, graph building, graph search, and optional AI explanation. The frontend uses React, TypeScript, React Flow, and Dagre for a responsive graph workspace.
+Backend responsibilities are split across repository loading, filtering, language detection, parsing, graph building, search, and optional AI explanation. The frontend uses React, TypeScript, React Flow, and Dagre for the graph workspace.
 
 ## Static Analysis Boundary
 
-Repository code is never executed. CodeAtlas does not run package scripts, install target repository dependencies, execute Python files, or shell into analyzed repositories. GitHub content is treated as untrusted input.
+Repository code is never executed. CodeAtlas does not:
+
+- run target package scripts
+- install target repository dependencies
+- execute target Python files
+- shell into analyzed repositories
+- treat repository content as trusted input
 
 The analyzer ignores binary files and common generated or dependency directories such as `.git`, `node_modules`, `.next`, `dist`, `build`, `coverage`, `vendor`, and `generated`.
 
@@ -56,47 +121,33 @@ The analyzer ignores binary files and common generated or dependency directories
 - JSX
 - Python
 
-The MVP extracts files, functions, classes, imports, and exports where straightforward. It resolves deterministic local relative imports for JavaScript, TypeScript, and Python. External package imports are recorded as metadata, not fake internal file nodes.
+The MVP resolves deterministic local relative imports for JavaScript, TypeScript, and Python. External package imports are recorded as metadata, not invented as internal file nodes.
 
-## Graph Model
+## Verification
 
-The graph uses explicit typed nodes and edges:
+Run the normal verification workflow:
 
-- `FILE`
-- `FUNCTION`
-- `CLASS`
-- `IMPORTS`
-- `CONTAINS`
-
-The model leaves room for future `CALLS`, `REFERENCES`, `IMPLEMENTS`, and `EXTENDS` edges, but the MVP does not pretend syntax-level name matching is a reliable call graph.
-
-Node and edge IDs are deterministic for identical source input.
-
-## Graph-First Questions
-
-CodeAtlas uses graph-first context retrieval instead of sending the entire repository to an LLM.
-
-Question workflow:
-
-1. Normalize the user question.
-2. Search graph nodes by file path, symbol name, imports, exports, and reverse imports.
-3. Return ranked candidate nodes and a deterministic answer.
-4. If AI is available, explain only the retrieved candidate context.
-5. Validate every AI reference against known graph paths and symbols.
-
-The app remains fully useful without an OpenAI API key. When `OPENAI_API_KEY` is unavailable, the question feature returns deterministic ranked results.
-
-## Demo Mode
-
-The local demo mode works without GitHub or OpenAI credentials. It loads a deterministic TypeScript-flavored sample graph with GitHub ingestion, scoring, analysis, and chart files.
-
-Recommended real-world demo repository:
-
-```text
-https://github.com/gogun-rgb/ai-hype-radar
+```bash
+pnpm run verify
 ```
 
-CodeAtlas does not hardcode claims about that repository. It analyzes the live repository when submitted.
+This runs:
+
+- backend Ruff linting
+- backend mypy type checking
+- backend pytest
+- frontend ESLint
+- frontend TypeScript checking
+- Vite production build
+- frontend Vitest
+
+Current verified packaging snapshot:
+
+- backend pytest: 23 passed
+- frontend Vitest: 2 files / 4 tests passed
+- GitHub Actions `Verify`: configured to run the same workflow on push and pull request
+
+See the [validation and cross-check record](docs/validation.md) for implementation review history and defect-reproduction evidence.
 
 ## Local Setup
 
@@ -119,7 +170,9 @@ GITHUB_TOKEN=
 OPENAI_API_KEY=
 ```
 
-CodeAtlas can analyze public GitHub repositories without a `GITHUB_TOKEN`, but unauthenticated GitHub API rate limits are lower. Setting `GITHUB_TOKEN` for the backend gives local analysis and portfolio demos more GitHub API rate-limit headroom. It is optional and does not change the public-repository-only MVP scope.
+`GITHUB_TOKEN` is optional. Public repositories still work without it, but unauthenticated GitHub API rate limits are lower. Setting it for the backend gives local analysis and portfolio demos more GitHub API rate-limit headroom. Private repository support is not claimed.
+
+`OPENAI_API_KEY` is optional. Deterministic graph-first answers work without AI; the key only enables optional explanation of already retrieved graph context.
 
 Run the app:
 
@@ -129,31 +182,19 @@ pnpm run dev
 
 The backend runs through FastAPI/Uvicorn and the frontend runs through Vite.
 
-## Verification
-
-Run the normal verification workflow:
-
-```bash
-pnpm run verify
-```
-
-This runs backend linting, backend type checking, backend tests, frontend linting, frontend type checking, frontend tests, and a production build.
-
 ## Limitations
 
 - Public GitHub repositories only.
 - GitHub API rate limits may apply.
-- Very large repositories are limited by file count and total source size.
-- The MVP does not implement full call resolution.
+- Large repositories are limited by file count and total source size.
+- Full `CALLS` resolution is not implemented.
 - Absolute import alias resolution is not included.
-- Parser errors are surfaced as safe file warnings and metadata instead of raw stack traces.
+- Parser warnings may indicate incomplete graph data.
 - Optional AI explanation is not source-of-truth graph data.
 
 ## Roadmap
 
 - Add call/reference analysis where language support is strong enough.
-- Add Go, Rust, and Java extractors.
 - Add repository-level caching.
 - Add snippet retrieval for selected candidates with strict size caps.
 - Add graph clustering for large projects.
-- Add richer onboarding workflows around common beginner tasks.
