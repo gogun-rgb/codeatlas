@@ -1,0 +1,42 @@
+[project]
+name = "codeatlas-backend"
+version = "0.1.0"
+description = "Static code graph analysis API for CodeAtlas."
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.116.0",
+  "httpx>=0.28.0",
+  "openai>=2.0.0",
+  "pydantic>=2.10.0",
+  "tree-sitter>=0.25.0",
+  "tree-sitter-language-pack>=0.9.0",
+  "uvicorn[standard]>=0.35.0"
+]
+
+[project.optional-dependencies]
+dev = [
+  "mypy>=1.16.0",
+  "pytest>=8.4.0",
+  "pytest-asyncio>=1.0.0",
+  "ruff>=0.12.0"
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+pythonpath = ["."]
+addopts = "-p no:cacheprovider"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+ignore_missing_imports = true
+warn_unused_ignores = false
+plugins = ["pydantic.mypy"]

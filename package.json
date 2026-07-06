@@ -1,0 +1,16 @@
+{
+  "name": "codeatlas",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Codebase onboarding and memory graph dashboard.",
+  "packageManager": "pnpm@11.7.0",
+  "scripts": {
+    "dev": "concurrently \"pnpm run dev:backend\" \"pnpm --dir frontend run dev\"",
+    "dev:backend": "node scripts/backend.mjs dev",
+    "verify": "pnpm run verify:backend && pnpm --dir frontend run verify",
+    "verify:backend": "node scripts/backend.mjs verify"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
