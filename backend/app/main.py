@@ -18,7 +18,7 @@ def allowed_origins() -> list[str]:
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="CodeAtlas API", version="0.1.0")
+    app = FastAPI(title="CodeAtlas API", version="0.2.0")
     app.add_middleware(
         CORSMiddleware,
         allow_origins=allowed_origins(),
