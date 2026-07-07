@@ -151,21 +151,31 @@ This runs:
 - Vite production build
 - frontend Vitest
 
-Current verified packaging snapshot:
+Current local verification snapshot:
 
-- backend pytest: 47 passed
-- frontend Vitest: 5 files / 11 tests passed
-- GitHub Actions `Verify`: configured to run the same workflow on push and pull request
+- backend pytest: 74 passed, 1 warning
+- frontend Vitest: 5 files / 16 tests passed
+- GitHub Actions `Verify`: configured to run the same workflow on push and pull request, but remote CI must be checked against the exact pushed commit before claiming a remote pass
 
 See the [validation and cross-check record](docs/validation.md) for implementation review history and defect-reproduction evidence.
 
 ## Local Setup
 
-Install backend dependencies:
+Backend dependencies are declared in `backend/pyproject.toml`. CI uses the committed `backend/uv.lock` for reproducible backend dependency resolution.
+
+Install backend dependencies with pip for the simplest local setup:
 
 ```bash
 python -m pip install -e "backend[dev]"
 ```
+
+For a CI-equivalent backend install, use the locked `uv` workflow:
+
+```bash
+uv sync --project backend --extra dev --frozen
+```
+
+CI points `CODEATLAS_PYTHON` at the `backend/.venv` interpreter created by `uv`. The pip setup above remains the simplest local path for `pnpm run verify`.
 
 Install frontend dependencies:
 
@@ -178,11 +188,22 @@ Optional local environment:
 ```bash
 GITHUB_TOKEN=
 OPENAI_API_KEY=
+CODEATLAS_ALLOWED_ORIGINS=
+CODEATLAS_ANALYZE_RATE_LIMIT=10
+CODEATLAS_ANALYZE_RATE_WINDOW_SECONDS=600
+CODEATLAS_QUESTION_QUOTA=50
+CODEATLAS_AI_QUOTA=10
+CODEATLAS_LIMITER_MAX_TRACKED_ANALYSES=256
+CODEATLAS_TRUST_X_FORWARDED_FOR=false
 ```
 
 `GITHUB_TOKEN` is optional. Public repositories still work without it, but unauthenticated GitHub API rate limits are lower. Setting it for the backend gives local analysis and portfolio demos more GitHub API rate-limit headroom. Private repository support is not claimed.
 
 `OPENAI_API_KEY` is optional. Deterministic graph-first answers work without AI; the key only enables optional explanation of already retrieved graph context.
+
+Public API abuse boundaries are intentionally in-process for the MVP. Defaults allow 10 `/api/analyze` requests per client key per 10 minutes, 50 questions per `analysis_id`, and 10 optional AI explanation requests per `analysis_id`. When the AI quota is exhausted, CodeAtlas returns the deterministic graph answer with `ai_status` set to `quota_exhausted` and does not call OpenAI.
+
+The analyze limiter uses the direct ASGI client address by default. `CODEATLAS_TRUST_X_FORWARDED_FOR=true` explicitly switches client identity to the first non-empty `X-Forwarded-For` value for trusted proxy deployments; leave it disabled unless the deployment boundary is trusted.
 
 Run the app:
 
@@ -221,6 +242,12 @@ Backend environment variables:
 - `CODEATLAS_ALLOWED_ORIGINS`
 - `GITHUB_TOKEN` optional
 - `OPENAI_API_KEY` optional
+- `CODEATLAS_ANALYZE_RATE_LIMIT` optional
+- `CODEATLAS_ANALYZE_RATE_WINDOW_SECONDS` optional
+- `CODEATLAS_QUESTION_QUOTA` optional
+- `CODEATLAS_AI_QUOTA` optional
+- `CODEATLAS_LIMITER_MAX_TRACKED_ANALYSES` optional
+- `CODEATLAS_TRUST_X_FORWARDED_FOR` optional
 
 Frontend Static Site:
 

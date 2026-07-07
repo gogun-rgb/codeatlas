@@ -40,7 +40,7 @@ export interface QuestionAnswer {
   question: string;
   candidates: SearchCandidate[];
   deterministic_answer: string;
-  ai_status: "disabled" | "unavailable" | "validation_failed" | "generated";
+  ai_status: "disabled" | "unavailable" | "validation_failed" | "quota_exhausted" | "generated";
   ai_explanation?: string | null;
   ai_references: Array<{ path: string; symbol?: string | null; reason: string }>;
 }

@@ -87,7 +87,7 @@ The feature improves GitHub API rate-limit headroom for local public-repository 
 
 ## Current Verification Snapshot
 
-After the graph-first quality revision, the actual local verification workflow was run:
+After the release-hardening revision, the actual local verification workflow was run:
 
 ```bash
 pnpm run verify
@@ -96,12 +96,12 @@ pnpm run verify
 Observed result:
 
 - Ruff passed
-- mypy passed
-- pytest collected 47 backend tests and all passed
+- mypy passed with no issues in 32 source files
+- pytest collected 74 backend tests and all passed with 1 warning
 - ESLint passed
 - TypeScript checking passed
 - Vite production build passed
-- Vitest ran 5 frontend test files / 11 tests and all passed
+- Vitest ran 5 frontend test files / 16 tests and all passed
 
 The GitHub Actions `Verify` workflow runs the same normal verification command on push and pull request. Remote CI must be checked against the exact pushed commit and is not inferred from local verification alone.
 
@@ -127,3 +127,28 @@ Focused evidence before final verification:
 - Backend Ruff and mypy passed.
 - Frontend ESLint passed.
 - Frontend TypeScript/Vite build passed outside the filesystem sandbox after sandboxed config resolution was denied.
+
+## Release Hardening Revision
+
+The v0.2.0 hardening revision kept the existing graph-first product shape and added bounded public API controls.
+
+Implemented and tested changes:
+
+- Pydantic request bounds for repository, analysis ID, and question strings.
+- `/api/question` continues to reject client-supplied graph payloads.
+- `/api/analyze` has a per-client in-process rate limit.
+- `/api/question` has a per-analysis deterministic question quota.
+- Optional AI explanation has a stricter per-analysis quota and does not call OpenAI after that quota is exhausted.
+- AI quota exhaustion returns the deterministic graph result with `ai_status` set to `quota_exhausted`.
+- Limiter configuration rejects invalid zero or negative values instead of disabling limits.
+- Limiter tests use injected time and do not sleep.
+- Backend CI dependency installation uses the committed `backend/uv.lock`.
+- `SECURITY.md` and `CONTRIBUTING.md` document the current boundaries and workflow.
+
+Focused evidence before final verification:
+
+- Backend validation, limiter, session, and AI focused suite: 34 passed, 1 warning.
+- Backend limiter suite after client-identity coverage was added: 11 passed.
+- Frontend focused suite: 5 files / 16 tests passed after rerunning outside the filesystem sandbox.
+- Backend Ruff and mypy passed before the full verifier.
+- Frozen backend install path: `uv sync --project backend --extra dev --frozen` installed 41 packages, and `pnpm run verify:backend` passed with `CODEATLAS_PYTHON` set to the `backend/.venv` interpreter.

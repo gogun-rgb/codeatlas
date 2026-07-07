@@ -115,4 +115,20 @@ describe("QuestionPanel", () => {
       false,
     );
   });
+
+  it("keeps the graph result visible when optional AI quota is exhausted", async () => {
+    askQuestionMock.mockResolvedValueOnce({
+      ...answer("Deterministic answer remains available"),
+      ai_status: "quota_exhausted",
+    });
+    render(<QuestionPanel analysisId="analysis-123" aiAvailable />);
+
+    fireEvent.click(screen.getByLabelText("AI explanation"));
+    fireEvent.click(screen.getByRole("button", { name: /ask graph/i }));
+
+    expect(await screen.findByText("Deterministic answer remains available")).toBeInTheDocument();
+    expect(
+      screen.getByText("Optional AI explanation quota reached; graph result is still available."),
+    ).toBeInTheDocument();
+  });
 });

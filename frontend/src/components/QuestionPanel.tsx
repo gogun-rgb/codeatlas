@@ -119,6 +119,11 @@ export function QuestionPanel({ analysisId, aiAvailable }: Props): ReactElement 
           {answer.ai_status === "unavailable" || answer.ai_status === "validation_failed" ? (
             <p className="muted">Optional AI explanation unavailable.</p>
           ) : null}
+          {answer.ai_status === "quota_exhausted" ? (
+            <p className="muted">
+              Optional AI explanation quota reached; graph result is still available.
+            </p>
+          ) : null}
           <ol>
             {answer.candidates.slice(0, 5).map((candidate) => (
               <li key={candidate.node.id}>

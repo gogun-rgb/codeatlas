@@ -6,21 +6,26 @@ from fastapi.testclient import TestClient
 from app.api import routes
 from app.main import create_app
 from app.models.graph import CodeGraph, GraphNode, NodeType
+from app.services.ai import AIExplanation, AIReference
 from app.services.analysis_cache import (
     AnalysisCache,
     AnalysisCacheExpiredError,
     AnalysisCacheMissError,
 )
+from app.services.request_limiter import LimiterConfig, RequestLimiter
 
 
 @pytest.fixture(autouse=True)
 def isolated_analysis_cache() -> object:
     original_cache = routes.analysis_cache
+    original_limiter = routes.request_limiter
     routes.analysis_cache = AnalysisCache(max_entries=8, ttl_seconds=60)
+    routes.request_limiter = RequestLimiter()
     try:
         yield
     finally:
         routes.analysis_cache = original_cache
+        routes.request_limiter = original_limiter
 
 
 def _graph(path: str) -> CodeGraph:
@@ -124,6 +129,96 @@ def test_question_endpoint_rejects_client_controlled_graph_payload() -> None:
     )
 
     assert response.status_code == 422
+
+
+def test_question_quota_returns_429_after_analysis_exists() -> None:
+    routes.request_limiter = RequestLimiter(LimiterConfig(question_quota=1))
+    client = TestClient(create_app())
+    analysis_id = client.get("/api/demo").json()["analysis_id"]
+
+    first = client.post(
+        "/api/question",
+        json={"analysis_id": analysis_id, "question": "Where is scoring?"},
+    )
+    second = client.post(
+        "/api/question",
+        json={"analysis_id": analysis_id, "question": "Where is scoring?"},
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 429
+    assert second.json()["detail"] == (
+        "Question quota exceeded for this analysis. Re-run analysis to continue."
+    )
+
+
+class CountingAIClient:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def create_explanation(self, question, candidates, graph) -> AIExplanation:
+        self.calls += 1
+        return AIExplanation(
+            summary="Start with calculateScore.",
+            references=[
+                AIReference(path="src/lib/scoring.ts", symbol="calculateScore", reason="valid"),
+            ],
+        )
+
+
+def test_ai_quota_exhaustion_never_invokes_ai_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    routes.request_limiter = RequestLimiter(LimiterConfig(question_quota=5, ai_quota=1))
+    ai_client = CountingAIClient()
+    monkeypatch.setattr(
+        routes.OpenAIResponsesClient,
+        "from_environment",
+        staticmethod(lambda: ai_client),
+    )
+    client = TestClient(create_app())
+    analysis_id = client.get("/api/demo").json()["analysis_id"]
+
+    first = client.post(
+        "/api/question",
+        json={"analysis_id": analysis_id, "question": "Where is scoring?", "use_ai": True},
+    )
+    second = client.post(
+        "/api/question",
+        json={"analysis_id": analysis_id, "question": "Where is scoring?", "use_ai": True},
+    )
+
+    assert first.status_code == 200
+    assert first.json()["ai_status"] == "generated"
+    assert second.status_code == 200
+    assert second.json()["ai_status"] == "quota_exhausted"
+    assert second.json()["deterministic_answer"]
+    assert ai_client.calls == 1
+
+
+def test_ai_quota_is_not_consumed_when_ai_is_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    routes.request_limiter = RequestLimiter(LimiterConfig(question_quota=3, ai_quota=1))
+    monkeypatch.setattr(
+        routes.OpenAIResponsesClient,
+        "from_environment",
+        staticmethod(lambda: None),
+    )
+    client = TestClient(create_app())
+    analysis_id = client.get("/api/demo").json()["analysis_id"]
+
+    first = client.post(
+        "/api/question",
+        json={"analysis_id": analysis_id, "question": "Where is scoring?", "use_ai": True},
+    )
+    second = client.post(
+        "/api/question",
+        json={"analysis_id": analysis_id, "question": "Where is scoring?", "use_ai": True},
+    )
+
+    assert first.status_code == 200
+    assert first.json()["ai_status"] == "disabled"
+    assert second.status_code == 200
+    assert second.json()["ai_status"] == "disabled"
 
 
 def test_repeated_questions_reuse_same_stored_analysis() -> None:
