@@ -188,6 +188,54 @@ pnpm run dev
 
 The backend runs through FastAPI/Uvicorn and the frontend runs through Vite.
 
+## Render Deployment
+
+CodeAtlas can be deployed as two Render services: one Web Service for the FastAPI backend and one Static Site for the Vite frontend.
+
+Backend Web Service:
+
+Build Command:
+
+```bash
+pip install -e backend
+```
+
+Start Command:
+
+```bash
+uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port $PORT
+```
+
+Health Check Path:
+
+```text
+/api/health
+```
+
+Backend environment variables:
+
+- `CODEATLAS_ALLOWED_ORIGINS`
+- `GITHUB_TOKEN` optional
+- `OPENAI_API_KEY` optional
+
+Frontend Static Site:
+
+Build Command:
+
+```bash
+pnpm install --frozen-lockfile && pnpm --dir frontend run build
+```
+
+Publish Directory:
+
+```text
+frontend/dist
+```
+
+Frontend environment variable:
+
+- `VITE_API_BASE_URL`
+
 ## Limitations
 
 - Public GitHub repositories only.

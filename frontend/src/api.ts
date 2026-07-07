@@ -1,7 +1,15 @@
 import type { AnalyzeResponse, QuestionAnswer } from "./types";
 
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, {
+export function apiUrl(path: string): string {
+  const baseUrl = import.meta.env.VITE_API_BASE_URL?.trim();
+  if (!baseUrl) {
+    return path;
+  }
+  return `${baseUrl.replace(/\/$/, "")}${path}`;
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(apiUrl(path), {
     ...init,
     headers: {
       "Content-Type": "application/json",
